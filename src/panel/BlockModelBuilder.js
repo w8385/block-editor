@@ -52,6 +52,11 @@ function isBlockNode(node) {
     return BLOCK_NODE_KINDS.has(kind);
 }
 
+function isUsageNode(node) {
+    const kind = normalizeKind(node?.kind || node?.type);
+    return kind.endsWith('usage');
+}
+
 function isBlockEdge(edge) {
     return BLOCK_EDGE_KINDS.has(normalizeEdgeKind(edge));
 }
@@ -162,6 +167,60 @@ function buildDirectParentMap(nodes, edges, resolveNodeKey) {
     return directParentMap;
 }
 
+function wouldCreateParentCycle(childKey, parentKey, directParentMap) {
+    const visited = new Set([childKey]);
+    let cursor = parentKey;
+
+    while (cursor) {
+        if (visited.has(cursor)) {
+            return true;
+        }
+        visited.add(cursor);
+        cursor = directParentMap.get(cursor) || '';
+    }
+
+    return false;
+}
+
+function inferFeatureTypingParents(edges, directParentMap, resolveNodeKey, nodeByKey) {
+    for (let pass = 0; pass < nodeByKey.size; pass++) {
+        let changed = false;
+
+        for (const edge of edges) {
+            const edgeKind = normalizeEdgeKind(edge);
+            if (edgeKind !== 'featuretyping' && edgeKind !== 'typefeaturing') {
+                continue;
+            }
+
+            const sourceKey = resolveNodeKey(edge.source);
+            const targetKey = resolveNodeKey(edge.target);
+            if (!sourceKey || !targetKey || sourceKey === targetKey || directParentMap.has(sourceKey)) {
+                continue;
+            }
+
+            const sourceNode = nodeByKey.get(sourceKey);
+            if (!sourceNode || !isUsageNode(sourceNode)) {
+                continue;
+            }
+
+            const targetParentKey = directParentMap.get(targetKey) || '';
+            if (!targetParentKey || targetParentKey === sourceKey) {
+                continue;
+            }
+            if (wouldCreateParentCycle(sourceKey, targetParentKey, directParentMap)) {
+                continue;
+            }
+
+            directParentMap.set(sourceKey, targetParentKey);
+            changed = true;
+        }
+
+        if (!changed) {
+            break;
+        }
+    }
+}
+
 function findNearestKeptAncestor(nodeKey, keptNodeKeys, directParentMap, resolveNodeKey) {
     const visited = new Set([nodeKey]);
     let cursor = directParentMap.get(nodeKey) || '';
@@ -204,6 +263,7 @@ function buildBlockModel(model) {
     const rawEdges = Array.isArray(model?.edges) ? model.edges : [];
     const { nodeByKey, resolveNodeKey } = buildLookup(rawNodes);
     const directParentMap = buildDirectParentMap(rawNodes, rawEdges, resolveNodeKey);
+    inferFeatureTypingParents(rawEdges, directParentMap, resolveNodeKey, nodeByKey);
     const keptNodeKeys = new Set();
 
     for (const node of rawNodes) {
