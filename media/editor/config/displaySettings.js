@@ -118,11 +118,11 @@
             modelOrderStrategy: 'NODES_AND_EDGES',
             compactionStrategy: 'EDGE_LENGTH',
             // 간격
-            nodeNodeSpacing: 100,           // 동일 레이어 내 노드 간 간격
-            nodeNodeBetweenLayers: 80,    // 레이어 사이 노드 간 간격
-            componentComponentSpacing: 80, // 연결 컴포넌트 간 간격 (엣지 없는 독립 노드 그룹 사이)
-            edgeNodeBetweenLayers: 40,     // 레이어 사이 엣지-노드 간 간격
-            edgeNodeSpacing: 40,           // 동일 레이어 내 엣지-노드 간 간격
+            nodeNodeSpacing: 40,           // 동일 레이어 내 노드 간 간격
+            nodeNodeBetweenLayers: 40,    // 레이어 사이 노드 간 간격
+            componentComponentSpacing: 35, // 연결 컴포넌트 간 간격 (엣지 없는 독립 노드 그룹 사이)
+            edgeNodeBetweenLayers: 15,     // 레이어 사이 엣지-노드 간 간격
+            edgeNodeSpacing: 15,           // 동일 레이어 내 엣지-노드 간 간격
             edgeEdgeSpacing: 15,           // 엣지-엣지 간 최소 간격
             edgeEdgeBetweenLayers: 15,     // 레이어 간 엣지-엣지 간격
             thoroughness: 7,               // 레이아웃 품질 (높을수록 정확)
@@ -130,13 +130,13 @@
             mergeHierarchyEdges: false,    // 계층 엣지 병합
             compactConnectedComponents: true, // 연결된 컴포넌트 압축
             // 컨테이너 내부 간격 (actor 등 엣지 없는 자식 노드 간 세로 간격)
-            containerChildSpacing: 40,
+            containerChildSpacing: 20,
             // 컨테이너 내부 패딩
             containerPadding: {
-                top: 60,                   // 기본 상단 패딩
-                left: 40,                  // 좌측 패딩
-                right: 40,                 // 우측 패딩
-                bottom: 40,                // 기본 하단 패딩
+                top: 44,                   // 기본 상단 패딩
+                left: 24,                  // 좌측 패딩
+                right: 24,                 // 우측 패딩
+                bottom: 24,                // 기본 하단 패딩
                 ifActionTop: 90,           // IfAction 상단 패딩 (조건 라벨 공간)
                 whileLoopBottom: 70,       // WhileLoop 하단 패딩 (until 조건 공간)
             },
