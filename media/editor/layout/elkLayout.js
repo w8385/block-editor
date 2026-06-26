@@ -58,6 +58,12 @@
         );
       }
 
+      function isSpecializationEdgeKind(kind) {
+        if (!kind) return false;
+        const k = String(kind).toLowerCase();
+        return k.includes('inheritance') || k.includes('specialization') || k.includes('generalization');
+      }
+
       const finalLayoutOptions = Object.assign({
           'elk.algorithm': ELK_CFG?.algorithm ?? 'layered',
           'elk.direction': ELK_CFG?.direction ?? 'DOWN',
@@ -69,6 +75,7 @@
           'elk.layered.considerModelOrder.strategy': ELK_CFG?.modelOrderStrategy ?? 'NODES_AND_EDGES',
           'elk.layered.nodePlacement.strategy': ELK_CFG?.nodePlacement ?? 'NETWORK_SIMPLEX',
           'elk.edgeRouting': ELK_CFG?.edgeRouting ?? 'ORTHOGONAL',
+          'elk.hierarchyHandling': ELK_CFG?.hierarchyHandling ?? 'INCLUDE_CHILDREN',
           'elk.spacing.edgeEdge': String(ELK_CFG?.edgeEdgeSpacing ?? 15),
           'elk.spacing.edgeEdgeBetweenLayers': String(ELK_CFG?.edgeEdgeBetweenLayers ?? 15),
           'elk.layered.mergeEdges': String(ELK_CFG?.mergeEdges ?? false),
@@ -124,6 +131,33 @@
       }
 
       // 엣지 수집
+      const routeMetaByElkEdgeId = new Map();
+      const topSpecializationTargets = new Set();
+      {
+        const specSources = new Set();
+        const specTargets = new Set();
+        const incomingNonSpecTargets = new Set();
+        const allConns = Array.isArray(diagramData.connections) ? diagramData.connections : [];
+        for (const e of allConns) {
+          const kind = e.kind || e.type;
+          const kindLower = String(kind || '').toLowerCase();
+          const s = resolveIdDirect(e.source);
+          const t = resolveIdDirect(e.target);
+          if (!s || !t || s === t) continue;
+          if (isSpecializationEdgeKind(kind)) {
+            specSources.add(s);
+            specTargets.add(t);
+          } else if (!isHierarchicalEdgeKind(kindLower)) {
+            incomingNonSpecTargets.add(t);
+          }
+        }
+        for (const targetId of specTargets) {
+          if (!specSources.has(targetId) && !incomingNonSpecTargets.has(targetId)) {
+            topSpecializationTargets.add(targetId);
+          }
+        }
+      }
+
       const allElkEdges = (() => {
         const all = Array.isArray(diagramData.connections) ? diagramData.connections : [];
         const kept = [];
@@ -146,22 +180,27 @@
           if (!s || !t || s === t) {
             continue;
           }
-          // cross-container featuretyping 엣지는 ELK에서 제외
-          // (내부→외부 연결이 컨테이너 레이아웃을 왜곡하므로 mxGraph auto-routing에 위임)
-          // 단, composition 타겟 노드의 featuretyping은 같은 레벨로 승격되므로 포함
-          if (kindLower === 'featuretyping') {
-            const sNode = nodeById.get(s);
-            const tNode = nodeById.get(t);
-            const sIsCompositionTarget = compositionTargets && compositionTargets.has(s);
-            if (!sIsCompositionTarget) {
-              const sParent = sNode?.parent || '';
-              const tParent = tNode?.parent || '';
-              if (sParent !== tParent) continue;
-            }
-          }
-          const pairKey = `${s}__${t}`;
+          // Block diagram featuretyping often crosses container boundaries
+          // (usage at root -> definition nested in a block). Keep it in ELK so
+          // mxGraph does not have to guess a route after layout.
+          const routeReversed = isSpecializationEdgeKind(kindLower);
+          const layoutSource = routeReversed ? t : s;
+          const layoutTarget = routeReversed ? s : t;
+          const pairKey = `${layoutSource}__${layoutTarget}`;
+          const edgeId = e.id || pairKey;
           seenPairs.add(pairKey);
-          kept.push({ id: e.id || pairKey, sources: [s], targets: [t] });
+          if (routeReversed) {
+            routeMetaByElkEdgeId.set(edgeId, { reverseWaypoints: true });
+          }
+          const elkEdge = { id: edgeId, sources: [layoutSource], targets: [layoutTarget] };
+          if (routeReversed) {
+            elkEdge.layoutOptions = {
+              'elk.layered.priority.direction': 50,
+              'elk.layered.priority.shortness': 10,
+              'elk.layered.priority.straightness': 10,
+            };
+          }
+          kept.push(elkEdge);
         }
 
         // 2차: flow 엣지의 border node → 부모 노드 해석 (같은 컨테이너 내부만)
@@ -464,6 +503,16 @@
 
           const elkChildren = childIds.map((cid) => {
             const n = byId.get(cid);
+
+            function applyTopSpecializationConstraint(elkNode) {
+              if (topSpecializationTargets.has(n.id)) {
+                elkNode.layoutOptions = Object.assign({}, elkNode.layoutOptions || {}, {
+                  'elk.layered.layering.layerConstraint': 'FIRST',
+                });
+              }
+              return elkNode;
+            }
+
             // collapsed 상태이면 자식 무시하고 leaf 노드로 처리
             const hasKids = childrenOf.has(n.id) && !n._collapsed;
             if (hasKids) {
@@ -507,7 +556,7 @@
                   'elk.algorithm': ELK_CFG?.algorithm ?? 'layered',
                   'elk.direction': ELK_CFG?.direction ?? 'DOWN',
                   'elk.edgeRouting': ELK_CFG?.edgeRouting ?? 'ORTHOGONAL',
-                  'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
+                  'elk.hierarchyHandling': ELK_CFG?.hierarchyHandling ?? 'INCLUDE_CHILDREN',
                   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED'
               };
 
@@ -532,7 +581,7 @@
                 elkNode.edges = (elkNode.edges || []).concat(orderEdges);
               }
 
-              return elkNode;
+              return applyTopSpecializationConstraint(elkNode);
             } else {
               // [FIX] Start/Finalize nodes are rendered as small circles.
               // Force small size to prevent large gaps in edges.
@@ -544,33 +593,33 @@
               
               if (isActionType && (nameLower === 'start' || nameLower === 'finalize')) {
                 const SA = DS?.specialNode?.startAction;
-                return {
+                return applyTopSpecializationConstraint({
                   id: n.id,
                   width: Number(n.width) || SA?.width || 28,
                   height: Number(n.height) || SA?.height || 28,
                   labels: n.name ? [{ text: String(n.name) }] : undefined,
-                };
+                });
               }
               // DoneAction / FinalNode: 이중 원으로 렌더링되는 노드
               if (kindLower === 'doneaction' || kindLower === 'finalnode' ||
                   (isActionType && nameLower === 'done')) {
                 const DA = DS?.specialNode?.doneAction;
-                return {
+                return applyTopSpecializationConstraint({
                   id: n.id,
                   width: DA?.width ?? 34,
                   height: DA?.height ?? 34,
                   labels: n.name ? [{ text: String(n.name) }] : undefined,
-                };
+                });
               }
 
               // collapsed 노드는 최소 크기로 강제 (precomputeNodeSizes 덮어쓰기 방지)
               if (n._collapsed) {
-                return {
+                return applyTopSpecializationConstraint({
                   id: n.id,
                   width: 120,
                   height: 40,
                   labels: n.name ? [{ text: String(n.name) }] : undefined,
-                };
+                });
               }
 
               // Compartment가 있는 노드는 precomputeNodeSizes에서 이미 계산됨
@@ -719,7 +768,7 @@
                 labels: n.name ? [{ text: String(n.name) }] : undefined,
               };
 
-              return elkNode;
+              return applyTopSpecializationConstraint(elkNode);
             }
           });
 
@@ -729,7 +778,9 @@
         return toElkChildren('root');
       }
 
-      const result = await elk.layout(elkGraph);
+      // ELK mutates the input graph; a plain JSON copy keeps our route metadata
+      // and browser-side model references independent from ELK internals.
+      const result = await elk.layout(JSON.parse(JSON.stringify(elkGraph)));
       
       // Apply computed positions (and sizes) recursively to our diagramData
       // ELK 원본 상대 좌표(relativeX, relativeY)와 절대 좌표(x, y) 모두 저장
@@ -805,7 +856,8 @@
               }
 
               if (waypoints.length >= 2) {
-                connection.waypoints = waypoints;
+                const meta = routeMetaByElkEdgeId.get(elkEdge.id);
+                connection.waypoints = meta?.reverseWaypoints ? waypoints.reverse() : waypoints;
               }
             }
           }
@@ -824,13 +876,72 @@
       // Apply edge routing from ELK
       applyEdgeRouting(result, 0, 0);
 
+      function applyFallbackEdgeRouting() {
+        const connections = Array.isArray(diagramData.connections) ? diagramData.connections : [];
+
+        function boundsFor(ref) {
+          const id = resolveIdDirect(ref) || resolveId(ref);
+          const n = id ? nodeById.get(id) : null;
+          if (!n) return null;
+          const x = Number(n.x || 0);
+          const y = Number(n.y || 0);
+          const w = Number(n.width || 120);
+          const h = Number(n.height || 60);
+          return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+        }
+
+        function boundaryPoint(from, to) {
+          const dx = to.cx - from.cx;
+          const dy = to.cy - from.cy;
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            return { x: dx >= 0 ? from.x + from.w : from.x, y: from.cy };
+          }
+          return { x: from.cx, y: dy >= 0 ? from.y + from.h : from.y };
+        }
+
+        function simplify(points) {
+          return points.filter((point, index) => {
+            if (index === 0) return true;
+            const prev = points[index - 1];
+            return Math.abs(prev.x - point.x) > 0.5 || Math.abs(prev.y - point.y) > 0.5;
+          });
+        }
+
+        for (const connection of connections) {
+          if (Array.isArray(connection.waypoints) && connection.waypoints.length >= 2) continue;
+          const kind = connection.kind || connection.type;
+          if (isHierarchicalEdgeKind(kind) && !connection.kindClass) continue;
+          if (String(kind || '').toLowerCase() === 'containment') continue;
+
+          const sourceBounds = boundsFor(connection.source);
+          const targetBounds = boundsFor(connection.target);
+          if (!sourceBounds || !targetBounds) continue;
+
+          const start = boundaryPoint(sourceBounds, targetBounds);
+          const end = boundaryPoint(targetBounds, sourceBounds);
+          let waypoints;
+          if (Math.abs(start.x - end.x) < 0.5 || Math.abs(start.y - end.y) < 0.5) {
+            waypoints = [start, end];
+          } else if (Math.abs(sourceBounds.cx - targetBounds.cx) >= Math.abs(sourceBounds.cy - targetBounds.cy)) {
+            const midX = Math.round((start.x + end.x) / 2);
+            waypoints = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
+          } else {
+            const midY = Math.round((start.y + end.y) / 2);
+            waypoints = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
+          }
+          connection.waypoints = simplify(waypoints);
+        }
+      }
+
+      applyFallbackEdgeRouting();
+
       // Post-process: align nodes in the same container & rank horizontally
       // RE-ENABLED: ELK spacing을 고려하도록 개선된 alignRanks 사용
       if (typeof NS.alignRanks === 'function') {
         try { 
           NS.alignRanks(diagramData, { 
-            debug: true,  // 디버그 모드 활성화하여 로그 확인
-            preserveElkSpacing: false  // 강제 정렬 모드로 테스트
+            debug: false,
+            preserveElkSpacing: true
           }); 
         } catch (e) { 
           console.log('[applyElkLayout] alignRanks failed', e); 

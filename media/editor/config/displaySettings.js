@@ -112,6 +112,7 @@
             algorithm: 'layered',
             direction: 'DOWN',
             edgeRouting: 'ORTHOGONAL',
+            hierarchyHandling: 'INCLUDE_CHILDREN',
             nodePlacement: 'NETWORK_SIMPLEX',
             crossingMinimization: 'LAYER_SWEEP',
             modelOrderStrategy: 'NODES_AND_EDGES',
