@@ -178,6 +178,12 @@
         }
     }
 
+    function hasElkGeometry(nodes) {
+        return Array.isArray(nodes) && nodes.some((node) =>
+            node && (typeof node.relativeX === 'number' || typeof node.relativeY === 'number')
+        );
+    }
+
     /**
      * 정규화된 모델을 mxGraph로 렌더링
      * @param {mxGraph} graph - mxGraph 인스턴스
@@ -285,8 +291,11 @@
 
                 nodes.forEach((node) => ensureCell(node));
 
-                // 부모 셀 크기를 자식 포함하도록 조정
-                resizeParentsToFitChildren(graph, parent, cellMap, nodes);
+                // ELK가 이미 compound node 크기와 상대 좌표를 계산한 경우에는
+                // 렌더 단계에서 부모/자식 좌표를 다시 움직이지 않는다.
+                if (!hasElkGeometry(nodes)) {
+                    resizeParentsToFitChildren(graph, parent, cellMap, nodes);
+                }
 
                 edges.forEach(edge => {
                     _createEdge(graph, parent, edge, cellMap, borderNodeIds);

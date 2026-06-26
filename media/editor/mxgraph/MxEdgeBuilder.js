@@ -275,6 +275,14 @@
                 return { x: cx, y: cy, w, h };
             }
 
+            function buildTerminalConstraint(prefix, waypoint, bounds) {
+                if (!waypoint || !bounds || bounds.w <= 0 || bounds.h <= 0) return '';
+                const clamp01 = (v) => Math.max(0, Math.min(1, v));
+                const nx = clamp01((waypoint.x - bounds.x) / bounds.w);
+                const ny = clamp01((waypoint.y - bounds.y) / bounds.h);
+                return `${prefix}X=${nx.toFixed(3)};${prefix}Y=${ny.toFixed(3)};${prefix}Perimeter=0`;
+            }
+
             // ELK waypoints를 geometry.points로 설정
             // startPoint도 포함(slice(0,-1))하여 mxGraph가 exitX/exitY 없이도 올바른 경로를 따르도록 함
             // exitX/exitY + geometry.points(bendPoints만) 조합 시 orthogonal router가 두 점 사이에
@@ -284,7 +292,9 @@
                 const geo = model.getGeometry(edgeCell);
                 if (geo) {
                     const newGeo = geo.clone();
-                    newGeo.points = geoPoints.map(p => ({ x: p.x, y: p.y }));
+                    newGeo.points = geoPoints.map(p =>
+                        typeof mxPoint === 'function' ? new mxPoint(p.x, p.y) : { x: p.x, y: p.y }
+                    );
                     model.setGeometry(edgeCell, newGeo);
                 }
             }
@@ -299,22 +309,18 @@
                 if (srcIsBN) {
                     const bnExit = getBorderNodeExitStyle(sourceCell);
                     if (bnExit) currentStyle += `;${bnExit}`;
+                } else {
+                    const srcConstraint = buildTerminalConstraint('exit', simplified[0], getCellAbsBounds(sourceCell));
+                    if (srcConstraint) currentStyle += `;${srcConstraint}`;
                 }
-                // 일반 노드: exitX/Y 추가 안 함 → geometry.points[0](=startPoint)이 자동으로 exit 역할
             }
             if (!currentStyle.includes('entryX=')) {
                 if (tgtIsBN) {
                     const bnEntry = getBorderNodeEntryStyle(targetCell);
                     if (bnEntry) currentStyle += `;${bnEntry}`;
                 } else {
-                    const wpN = simplified[simplified.length - 1];
-                    const tgtB = getCellAbsBounds(targetCell);
-                    if (tgtB && tgtB.w > 0 && tgtB.h > 0) {
-                        const clamp01 = (v) => Math.max(0, Math.min(1, v));
-                        const nx = clamp01((wpN.x - tgtB.x) / tgtB.w);
-                        const ny = clamp01((wpN.y - tgtB.y) / tgtB.h);
-                        currentStyle += `;entryX=${nx.toFixed(3)};entryY=${ny.toFixed(3)};entryPerimeter=0`;
-                    }
+                    const entryConstraint = buildTerminalConstraint('entry', simplified[simplified.length - 1], getCellAbsBounds(targetCell));
+                    if (entryConstraint) currentStyle += `;${entryConstraint}`;
                 }
             }
             model.setStyle(edgeCell, currentStyle);
