@@ -182,7 +182,56 @@ function wouldCreateParentCycle(childKey, parentKey, directParentMap) {
     return false;
 }
 
-function inferFeatureTypingParents(edges, directParentMap, resolveNodeKey, nodeByKey) {
+function buildSpecializationParentMap(edges, resolveNodeKey) {
+    const specializationParentMap = new Map();
+
+    for (const edge of edges) {
+        const edgeKind = normalizeEdgeKind(edge);
+        if (edgeKind !== 'specialization' && edgeKind !== 'inheritance' && edgeKind !== 'generalization') {
+            continue;
+        }
+
+        const sourceKey = resolveNodeKey(edge.source);
+        const targetKey = resolveNodeKey(edge.target);
+        if (!sourceKey || !targetKey || sourceKey === targetKey) {
+            continue;
+        }
+        if (!specializationParentMap.has(sourceKey)) {
+            specializationParentMap.set(sourceKey, []);
+        }
+        specializationParentMap.get(sourceKey).push(targetKey);
+    }
+
+    return specializationParentMap;
+}
+
+function findSpecializationAncestorParent(nodeKey, directParentMap, specializationParentMap) {
+    const visited = new Set([nodeKey]);
+    const queue = [...(specializationParentMap.get(nodeKey) || [])];
+
+    while (queue.length > 0) {
+        const cursor = queue.shift();
+        if (!cursor || visited.has(cursor)) {
+            continue;
+        }
+        visited.add(cursor);
+
+        const parentKey = directParentMap.get(cursor) || '';
+        if (parentKey) {
+            return parentKey;
+        }
+
+        for (const next of specializationParentMap.get(cursor) || []) {
+            if (!visited.has(next)) {
+                queue.push(next);
+            }
+        }
+    }
+
+    return '';
+}
+
+function inferFeatureTypingParents(edges, directParentMap, resolveNodeKey, nodeByKey, specializationParentMap) {
     for (let pass = 0; pass < nodeByKey.size; pass++) {
         let changed = false;
 
@@ -203,6 +252,46 @@ function inferFeatureTypingParents(edges, directParentMap, resolveNodeKey, nodeB
                 continue;
             }
 
+            let targetParentKey = directParentMap.get(targetKey) || '';
+            if (!targetParentKey) {
+                targetParentKey = findSpecializationAncestorParent(targetKey, directParentMap, specializationParentMap);
+            }
+            if (!targetParentKey) {
+                targetParentKey = targetKey;
+            }
+            if (!targetParentKey || targetParentKey === sourceKey) {
+                continue;
+            }
+            if (wouldCreateParentCycle(sourceKey, targetParentKey, directParentMap)) {
+                continue;
+            }
+
+            directParentMap.set(sourceKey, targetParentKey);
+            changed = true;
+        }
+
+        if (!changed) {
+            break;
+        }
+    }
+}
+
+function inferSpecializationParents(edges, directParentMap, resolveNodeKey) {
+    for (let pass = 0; pass < edges.length; pass++) {
+        let changed = false;
+
+        for (const edge of edges) {
+            const edgeKind = normalizeEdgeKind(edge);
+            if (edgeKind !== 'specialization' && edgeKind !== 'inheritance' && edgeKind !== 'generalization') {
+                continue;
+            }
+
+            const sourceKey = resolveNodeKey(edge.source);
+            const targetKey = resolveNodeKey(edge.target);
+            if (!sourceKey || !targetKey || sourceKey === targetKey || directParentMap.has(sourceKey)) {
+                continue;
+            }
+
             const targetParentKey = directParentMap.get(targetKey) || '';
             if (!targetParentKey || targetParentKey === sourceKey) {
                 continue;
@@ -219,6 +308,21 @@ function inferFeatureTypingParents(edges, directParentMap, resolveNodeKey, nodeB
             break;
         }
     }
+}
+
+function countRootDefinitionNodes(keptNodeKeys, directParentMap, resolveNodeKey, nodeByKey) {
+    let rootCount = 0;
+    for (const nodeKey of keptNodeKeys) {
+        const node = nodeByKey.get(nodeKey);
+        const kind = normalizeKind(node?.kind || node?.type);
+        if (!kind.endsWith('definition')) {
+            continue;
+        }
+        if (!findNearestKeptAncestor(nodeKey, keptNodeKeys, directParentMap, resolveNodeKey)) {
+            rootCount += 1;
+        }
+    }
+    return rootCount;
 }
 
 function findNearestKeptAncestor(nodeKey, keptNodeKeys, directParentMap, resolveNodeKey) {
@@ -263,7 +367,7 @@ function buildBlockModel(model) {
     const rawEdges = Array.isArray(model?.edges) ? model.edges : [];
     const { nodeByKey, resolveNodeKey } = buildLookup(rawNodes);
     const directParentMap = buildDirectParentMap(rawNodes, rawEdges, resolveNodeKey);
-    inferFeatureTypingParents(rawEdges, directParentMap, resolveNodeKey, nodeByKey);
+    const specializationParentMap = buildSpecializationParentMap(rawEdges, resolveNodeKey);
     const keptNodeKeys = new Set();
 
     for (const node of rawNodes) {
@@ -272,6 +376,16 @@ function buildBlockModel(model) {
             keptNodeKeys.add(nodeKey);
         }
     }
+
+    const specializationCandidateParentMap = new Map(directParentMap);
+    inferSpecializationParents(rawEdges, specializationCandidateParentMap, resolveNodeKey);
+    if (countRootDefinitionNodes(keptNodeKeys, specializationCandidateParentMap, resolveNodeKey, nodeByKey) <= 2) {
+        directParentMap.clear();
+        for (const [nodeKey, parentKey] of specializationCandidateParentMap) {
+            directParentMap.set(nodeKey, parentKey);
+        }
+    }
+    inferFeatureTypingParents(rawEdges, directParentMap, resolveNodeKey, nodeByKey, specializationParentMap);
 
     const filteredNodes = [];
     for (const nodeKey of keptNodeKeys) {
