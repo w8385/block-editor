@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../media/sysml-editor.css">
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f6f8fb; }
+  #title { position: absolute; left: 20px; top: 14px; z-index: 10; font: 600 18px system-ui, sans-serif; color: #1f2937; background: rgba(255,255,255,.92); border: 1px solid #d8dee8; padding: 8px 12px; border-radius: 4px; }
+  #mxGraphContainer { position: absolute; left: 0; top: 0; width: 1800px; height: 1300px; overflow: hidden; background: #fff; }
+</style>
+<script>
+  window.mxBasePath = '';
+  window.mxLoadResources = false;
+  window.mxLoadStylesheets = false;
+  window.vscode = { postMessage() {} };
+  window.SELAB = window.SELAB || {};
+  window.SELAB.Editor = window.SELAB.Editor || {};
+  window.SELAB.Editor.post = function() {};
+</script>
+</head>
+<body>
+  <div id="mxGraphContainer"></div>
+  <div id="title"></div>
+  <script src="../../node_modules/mxgraph/javascript/mxClient.min.js"></script>
+  <script src="../../node_modules/elkjs/lib/elk.bundled.js"></script>
+  <script src="../../media/editor/index.js"></script>
+  <script src="../../media/editor/utils.js"></script>
+  <script src="../../media/editor/utils/qualifiedNameUtils.js"></script>
+  <script src="../../media/editor/render/renderUtils.js"></script>
+  <script src="../../media/editor/config/displaySettings.js"></script>
+  <script src="../../media/editor/config/typeRegistry.js"></script>
+  <script src="../../media/editor/config/compartmentRules.js"></script>
+  <script src="../../media/editor/config/metrics.js"></script>
+  <script src="../../media/editor/model/model-cache.js"></script>
+  <script src="../../media/editor/model/visibilityFilter.js"></script>
+  <script src="../../media/editor/model/portBorderNodeHandler.js"></script>
+  <script src="../../media/editor/model/nodeTransformer.js"></script>
+  <script src="../../media/editor/model/edgeTransformer.js"></script>
+  <script src="../../media/editor/model/normalizer.js"></script>
+  <script src="../../media/editor/model/index.js"></script>
+  <script src="../../media/editor/hierarchy.js"></script>
+  <script src="../../media/editor/layout.js"></script>
+  <script src="../../media/editor/layout/elkLayout.js"></script>
+  <script src="../../media/editor/layout/alignRanks.js"></script>
+  <script src="../../media/editor/mxgraph/MxGraphWrapper.js"></script>
+  <script src="../../media/editor/mxgraph/MxStyleColors.js"></script>
+  <script src="../../media/editor/mxgraph/MxStyleShapes.js"></script>
+  <script src="../../media/editor/mxgraph/MxStyleManager.js"></script>
+  <script src="../../media/editor/mxgraph/MxTypeUtils.js"></script>
+  <script src="../../media/editor/mxgraph/MxLabelUtils.js"></script>
+  <script src="../../media/editor/mxgraph/MxCompartmentHtml.js"></script>
+  <script src="../../media/editor/mxgraph/MxCompartmentRenderer.js"></script>
+  <script src="../../media/editor/mxgraph/MxLoopBodyRenderer.js"></script>
+  <script src="../../media/editor/mxgraph/MxVertexBuilder.js"></script>
+  <script src="../../media/editor/mxgraph/MxEdgeBuilder.js"></script>
+  <script src="../../media/editor/mxgraph/MxCellFactory.js"></script>
+  <script src="../../media/editor/mxgraph/MxZoomPanHandler.js"></script>
+  <script>
+    window.renderBlockFixture = async function(payload) {
+      const ns = window.SELAB;
+      const container = document.getElementById('mxGraphContainer');
+      if (window.__graph && ns.MxGraph.destroy) {
+        ns.MxGraph.destroy(window.__graph);
+      }
+      window.__graph = null;
+      container.innerHTML = '';
+      document.getElementById('title').textContent = payload.name;
+      const normalized = ns.Editor.model.normalize(payload.model, null);
+      ns.Editor.hierarchy.derive(normalized);
+      ns.Editor.layout.precomputeNodeSizes(normalized);
+      await ns.applyElkLayout(normalized);
+      const graph = ns.MxGraph.init(container);
+      ns.MxGraph.styles.registerStyles(graph);
+      ns.MxGraph.factory.renderModel(graph, normalized);
+      graph.fit(60);
+      graph.getView().validate();
+      window.__graph = graph;
+      window.__normalized = normalized;
+      return {
+        nodes: normalized.elements.length,
+        edges: normalized.connections.length,
+        routed: normalized.connections.filter((e) => e.kind !== 'containment' && Array.isArray(e.waypoints)).length,
+        visibleEdges: normalized.connections.filter((e) => e.kind !== 'containment').length,
+        bounds: graph.getGraphBounds(),
+        scale: graph.getView().getScale(),
+      };
+    };
+  </script>
+</body>
+</html>

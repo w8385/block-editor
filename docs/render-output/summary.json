@@ -1,0 +1,263 @@
+[
+  {
+    "file": "test-1.json",
+    "nodes": 28,
+    "edges": 41,
+    "routed": 13,
+    "visibleEdges": 13,
+    "bounds": {
+      "x": 59.86999672810557,
+      "y": 59.86999672810557,
+      "width": 906.2127712945796,
+      "height": 1178.51543243538
+    },
+    "scale": 0.5139055513142109,
+    "score": 100,
+    "crossings": 0,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 1.46,
+    "crossingPairs": []
+  },
+  {
+    "file": "test-2.json",
+    "nodes": 25,
+    "edges": 42,
+    "routed": 23,
+    "visibleEdges": 23,
+    "bounds": {
+      "x": 59.4634646361107,
+      "y": 59.4634646361107,
+      "width": 1678.0537560404161,
+      "height": 1065.6537560404158
+    },
+    "scale": 0.9828671840679455,
+    "score": 97,
+    "crossings": 1,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 1.74,
+    "crossingPairs": [
+      [
+        "connection_Polygon_Resizable",
+        "connection_RenderEngine_Ellipse"
+      ]
+    ]
+  },
+  {
+    "file": "test-3.json",
+    "nodes": 23,
+    "edges": 45,
+    "routed": 22,
+    "visibleEdges": 22,
+    "bounds": {
+      "x": 59.99234052370515,
+      "y": 59.51828353904719,
+      "width": 717.3201407313417,
+      "height": 1178.4893759372476
+    },
+    "scale": 0.543545968393125,
+    "score": 100,
+    "crossings": 0,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.55,
+    "crossingPairs": []
+  },
+  {
+    "file": "test-4.json",
+    "nodes": 29,
+    "edges": 49,
+    "routed": 21,
+    "visibleEdges": 21,
+    "bounds": {
+      "x": 59.659979067707916,
+      "y": 59.74881249496819,
+      "width": 772.62453908703,
+      "height": 1178.591208437324
+    },
+    "scale": 0.3793575396505917,
+    "score": 100,
+    "crossings": 0,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 3.71,
+    "crossingPairs": []
+  },
+  {
+    "file": "test-5.json",
+    "nodes": 28,
+    "edges": 47,
+    "routed": 27,
+    "visibleEdges": 27,
+    "bounds": {
+      "x": 59.88930854154561,
+      "y": 59.960952934340504,
+      "width": 1028.5545031958163,
+      "height": 1178.4828588030216
+    },
+    "scale": 0.547588611272516,
+    "score": 100,
+    "crossings": 0,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.11,
+    "crossingPairs": []
+  },
+  {
+    "file": "test-6.json",
+    "nodes": 32,
+    "edges": 56,
+    "routed": 30,
+    "visibleEdges": 30,
+    "bounds": {
+      "x": 59.430092533907974,
+      "y": 59.430092533907974,
+      "width": 784.7988845227533,
+      "height": 1178.3988845227532
+    },
+    "scale": 0.5972873621498289,
+    "score": 91,
+    "crossings": 3,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.3,
+    "crossingPairs": [
+      [
+        "connection_ArmRobot_Robot",
+        "connection_PathPlanner_LiDAR"
+      ],
+      [
+        "connection_StepperMotor_Actuator",
+        "connection_PathPlanner_MotionPlanner"
+      ],
+      [
+        "connection_LiDAR_Sensor",
+        "connection_PathPlanner_MotionPlanner"
+      ]
+    ]
+  },
+  {
+    "file": "test-7.json",
+    "nodes": 33,
+    "edges": 53,
+    "routed": 28,
+    "visibleEdges": 28,
+    "bounds": {
+      "x": 59.7748295829363,
+      "y": 59.6310195704757,
+      "width": 1678.5379681888148,
+      "height": 887.2817782012754
+    },
+    "scale": 0.49197390603239755,
+    "score": 94,
+    "crossings": 2,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 1.96,
+    "crossingPairs": [
+      [
+        "connection_RotaryWing_Aircraft",
+        "connection_TailRotor_Rotor"
+      ],
+      [
+        "connection_Drone_RotaryWing",
+        "connection_MainRotor_Rotor"
+      ]
+    ]
+  },
+  {
+    "file": "test-8.json",
+    "nodes": 29,
+    "edges": 61,
+    "routed": 31,
+    "visibleEdges": 31,
+    "bounds": {
+      "x": 59.541468863445964,
+      "y": 59.40656241273387,
+      "width": 816.9519687238201,
+      "height": 1178.2922926556826
+    },
+    "scale": 0.6579167830215024,
+    "score": 94,
+    "crossings": 2,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.23,
+    "crossingPairs": [
+      [
+        "connection_WiFiInterface_Interface",
+        "connection_LoadBalancer_Switch"
+      ],
+      [
+        "connection_WiFiInterface_Interface",
+        "connection_HTTPProtocol_Server"
+      ]
+    ]
+  },
+  {
+    "file": "test-9.json",
+    "nodes": 30,
+    "edges": 63,
+    "routed": 30,
+    "visibleEdges": 30,
+    "bounds": {
+      "x": 59.79488950276243,
+      "y": 59.79488950276243,
+      "width": 1155.4688686982045,
+      "height": 1178
+    },
+    "scale": 0.81353591160221,
+    "score": 100,
+    "crossings": 0,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.27,
+    "crossingPairs": []
+  },
+  {
+    "file": "test-10.json",
+    "nodes": 30,
+    "edges": 50,
+    "routed": 24,
+    "visibleEdges": 24,
+    "bounds": {
+      "x": 59.7897444256096,
+      "y": 59.7897444256096,
+      "width": 1678.4495631764246,
+      "height": 1040.5495631764245
+    },
+    "scale": 0.5470074325205373,
+    "score": 97,
+    "crossings": 1,
+    "nonOrth": 0,
+    "nodeOverlaps": 0,
+    "edgeNodeHits": 0,
+    "rootUsage": 0,
+    "avgBends": 2.21,
+    "crossingPairs": [
+      [
+        "connection_ImagingSubsystem_DisplayUnit",
+        "connection_EmergencyShutdown_Ventilator"
+      ]
+    ]
+  }
+]
