@@ -255,6 +255,59 @@
         return kept;
       })();
 
+      const specializationParents = new Map();
+      {
+        const allConns = Array.isArray(diagramData.connections) ? diagramData.connections : [];
+        for (const e of allConns) {
+          const kind = e.kind || e.type;
+          if (!isSpecializationEdgeKind(kind)) {
+            continue;
+          }
+          const sourceId = resolveIdDirect(e.source);
+          const targetId = resolveIdDirect(e.target);
+          if (!sourceId || !targetId || sourceId === targetId) {
+            continue;
+          }
+          if (!specializationParents.has(sourceId)) {
+            specializationParents.set(sourceId, []);
+          }
+          specializationParents.get(sourceId).push(targetId);
+        }
+      }
+
+      const specializationOrderCache = new Map();
+      function getSpecializationOrderInfo(nodeId) {
+        if (specializationOrderCache.has(nodeId)) {
+          return specializationOrderCache.get(nodeId);
+        }
+
+        const visited = new Set([nodeId]);
+        let cursor = nodeId;
+        let root = nodeId;
+        let depth = 0;
+
+        while (specializationParents.has(cursor)) {
+          const parents = specializationParents.get(cursor)
+            .filter((parentId) => !visited.has(parentId))
+            .sort((a, b) => {
+              const an = nodeById.get(a)?.name || a;
+              const bn = nodeById.get(b)?.name || b;
+              return String(an).localeCompare(String(bn));
+            });
+          if (parents.length === 0) {
+            break;
+          }
+          cursor = parents[0];
+          visited.add(cursor);
+          root = cursor;
+          depth += 1;
+        }
+
+        const info = { root, depth };
+        specializationOrderCache.set(nodeId, info);
+        return info;
+      }
+
       // 부모 관계 맵 구축 (LCA 기반 엣지 배분용)
       const parentOf = new Map();
       for (const n of diagramData.elements) {
@@ -492,6 +545,15 @@
             if (ra !== rb) return ra - rb;
             const wa = roleWeight(na); const wb = roleWeight(nb);
             if (wa !== wb) return wa - wb;
+            const sa = getSpecializationOrderInfo(a);
+            const sb = getSpecializationOrderInfo(b);
+            if (sa.root !== sb.root) {
+              const ar = byId.get(sa.root)?.name || sa.root;
+              const br = byId.get(sb.root)?.name || sb.root;
+              const rootCompare = String(ar).localeCompare(String(br));
+              if (rootCompare !== 0) return rootCompare;
+            }
+            if (sa.depth !== sb.depth) return sa.depth - sb.depth;
             const an = String(na.name || ''); const bn = String(nb.name || '');
             return an.localeCompare(bn);
           });
@@ -935,6 +997,310 @@
 
       applyFallbackEdgeRouting();
 
+      function optimizeEdgeDetours() {
+        const EPS = 0.75;
+        const elements = Array.isArray(diagramData.elements) ? diagramData.elements : [];
+        const connections = Array.isArray(diagramData.connections) ? diagramData.connections : [];
+        if (elements.length === 0 || connections.length === 0) return;
+
+        const localParentOf = new Map();
+        for (const element of elements) {
+          localParentOf.set(element.id, element.parent || '');
+        }
+
+        function isAncestor(ancestorId, nodeId) {
+          let cursor = localParentOf.get(nodeId) || '';
+          while (cursor) {
+            if (cursor === ancestorId) return true;
+            cursor = localParentOf.get(cursor) || '';
+          }
+          return false;
+        }
+
+        function edgeKind(edge) {
+          return String(edge.kind || edge.type || '').toLowerCase();
+        }
+
+        function isRoutable(edge) {
+          return edgeKind(edge) !== 'containment' && Array.isArray(edge.waypoints) && edge.waypoints.length >= 2;
+        }
+
+        function orientation(a, b) {
+          if (Math.abs(a.x - b.x) <= EPS) return 'V';
+          if (Math.abs(a.y - b.y) <= EPS) return 'H';
+          return 'D';
+        }
+
+        function makeSegment(a, b, edge) {
+          return {
+            edge,
+            a,
+            b,
+            orientation: orientation(a, b),
+            minX: Math.min(a.x, b.x),
+            maxX: Math.max(a.x, b.x),
+            minY: Math.min(a.y, b.y),
+            maxY: Math.max(a.y, b.y),
+          };
+        }
+
+        function getSegments() {
+          const segments = [];
+          for (const edge of connections) {
+            if (!isRoutable(edge)) continue;
+            const points = edge.waypoints;
+            for (let i = 1; i < points.length; i++) {
+              segments.push(makeSegment(points[i - 1], points[i], edge));
+            }
+          }
+          return segments;
+        }
+
+        function segmentsCross(a, b) {
+          if (a.edge.id === b.edge.id) return false;
+          const sharesTerminal =
+            a.edge.source === b.edge.source ||
+            a.edge.source === b.edge.target ||
+            a.edge.target === b.edge.source ||
+            a.edge.target === b.edge.target;
+          if (sharesTerminal) return false;
+
+          if (a.orientation === 'H' && b.orientation === 'V') {
+            const x = b.a.x;
+            const y = a.a.y;
+            return x > a.minX + EPS && x < a.maxX - EPS && y > b.minY + EPS && y < b.maxY - EPS;
+          }
+          if (a.orientation === 'V' && b.orientation === 'H') {
+            const x = a.a.x;
+            const y = b.a.y;
+            return x > b.minX + EPS && x < b.maxX - EPS && y > a.minY + EPS && y < a.maxY - EPS;
+          }
+          return false;
+        }
+
+        function nodeRect(element) {
+          const x = Number(element.x || 0);
+          const y = Number(element.y || 0);
+          const w = Number(element.width || 120);
+          const h = Number(element.height || 60);
+          return { id: element.id, x, y, w, h };
+        }
+
+        const rects = elements.map(nodeRect);
+        const rectById = new Map(rects.map((rect) => [rect.id, rect]));
+        const minX = Math.min(...rects.map((rect) => rect.x)) - 80;
+        const maxX = Math.max(...rects.map((rect) => rect.x + rect.w)) + 80;
+        const minY = Math.min(...rects.map((rect) => rect.y)) - 80;
+        const maxY = Math.max(...rects.map((rect) => rect.y + rect.h)) + 80;
+
+        function segmentHitsRect(segment, rect) {
+          const pad = 1;
+          const x1 = rect.x - pad;
+          const x2 = rect.x + rect.w + pad;
+          const y1 = rect.y - pad;
+          const y2 = rect.y + rect.h + pad;
+          if (segment.orientation === 'H') {
+            return segment.a.y > y1 && segment.a.y < y2 && segment.maxX > x1 && segment.minX < x2;
+          }
+          if (segment.orientation === 'V') {
+            return segment.a.x > x1 && segment.a.x < x2 && segment.maxY > y1 && segment.minY < y2;
+          }
+          return true;
+        }
+
+        function edgeNodeHits(edge, points) {
+          let hits = 0;
+          for (let i = 1; i < points.length; i++) {
+            const segment = makeSegment(points[i - 1], points[i], edge);
+            if (segment.orientation === 'D') return Number.MAX_SAFE_INTEGER;
+            for (const rect of rects) {
+              if (rect.id === edge.source || rect.id === edge.target) continue;
+              if (
+                isAncestor(rect.id, edge.source) ||
+                isAncestor(rect.id, edge.target) ||
+                isAncestor(edge.source, rect.id) ||
+                isAncestor(edge.target, rect.id)
+              ) {
+                continue;
+              }
+              if (segmentHitsRect(segment, rect)) hits += 1;
+            }
+          }
+          return hits;
+        }
+
+        function crossingState() {
+          const segments = getSegments();
+          const counts = new Map();
+          let crossings = 0;
+          for (let i = 0; i < segments.length; i++) {
+            for (let j = i + 1; j < segments.length; j++) {
+              if (!segmentsCross(segments[i], segments[j])) continue;
+              crossings += 1;
+              counts.set(segments[i].edge.id, (counts.get(segments[i].edge.id) || 0) + 1);
+              counts.set(segments[j].edge.id, (counts.get(segments[j].edge.id) || 0) + 1);
+            }
+          }
+          return { crossings, counts };
+        }
+
+        function totalCost() {
+          const { crossings } = crossingState();
+          let bends = 0;
+          let length = 0;
+          let hits = 0;
+          for (const edge of connections) {
+            if (!isRoutable(edge)) continue;
+            const points = edge.waypoints;
+            bends += Math.max(0, points.length - 2);
+            hits += edgeNodeHits(edge, points);
+            for (let i = 1; i < points.length; i++) {
+              length += Math.abs(points[i - 1].x - points[i].x) + Math.abs(points[i - 1].y - points[i].y);
+            }
+          }
+          return crossings * 10000 + hits * 50000 + bends * 20 + length * 0.02;
+        }
+
+        function simplifyPoints(points) {
+          const result = [];
+          for (const point of points) {
+            const next = { x: Math.round(point.x), y: Math.round(point.y) };
+            const prev = result[result.length - 1];
+            if (!prev || Math.abs(prev.x - next.x) > EPS || Math.abs(prev.y - next.y) > EPS) {
+              result.push(next);
+            }
+          }
+
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (let i = 1; i < result.length - 1; i++) {
+              if (orientation(result[i - 1], result[i]) === orientation(result[i], result[i + 1])) {
+                result.splice(i, 1);
+                changed = true;
+                break;
+              }
+            }
+          }
+          return result;
+        }
+
+        function addRectLaneHints(rect, xLanes, yLanes, pad) {
+          if (!rect) return;
+          xLanes.push(rect.x - pad, rect.x + rect.w + pad);
+          yLanes.push(rect.y - pad, rect.y + rect.h + pad);
+        }
+
+        function crossingLaneHints(edge) {
+          const xLanes = [];
+          const yLanes = [];
+          const segments = getSegments();
+          const edgeSegments = segments.filter((segment) => segment.edge.id === edge.id);
+
+          for (const edgeSegment of edgeSegments) {
+            for (const otherSegment of segments) {
+              if (!segmentsCross(edgeSegment, otherSegment)) continue;
+
+              if (otherSegment.orientation === 'V') {
+                xLanes.push(otherSegment.a.x - 1, otherSegment.a.x + 1);
+                yLanes.push(otherSegment.minY - 24, otherSegment.maxY + 24);
+              } else if (otherSegment.orientation === 'H') {
+                xLanes.push(otherSegment.minX - 24, otherSegment.maxX + 24);
+                yLanes.push(otherSegment.a.y - 1, otherSegment.a.y + 1);
+              }
+
+              addRectLaneHints(rectById.get(edge.source), xLanes, yLanes, 24);
+              addRectLaneHints(rectById.get(edge.target), xLanes, yLanes, 24);
+              addRectLaneHints(rectById.get(otherSegment.edge.source), xLanes, yLanes, 24);
+              addRectLaneHints(rectById.get(otherSegment.edge.target), xLanes, yLanes, 24);
+            }
+          }
+
+          return { xLanes, yLanes };
+        }
+
+        function candidatePaths(edge) {
+          const points = edge.waypoints || [];
+          if (points.length < 2) return [];
+          const start = points[0];
+          const end = points[points.length - 1];
+          const midX = Math.round((start.x + end.x) / 2);
+          const midY = Math.round((start.y + end.y) / 2);
+          const baseYLanes = [minY, maxY, start.y - 70, start.y + 70, end.y - 70, end.y + 70, midY];
+          const baseXLanes = [minX, maxX, start.x - 70, start.x + 70, end.x - 70, end.x + 70, midX];
+          const crossingHints = crossingLaneHints(edge);
+          baseYLanes.push(...crossingHints.yLanes);
+          baseXLanes.push(...crossingHints.xLanes);
+          const yLanes = baseYLanes.slice();
+          const xLanes = baseXLanes.slice();
+          const candidates = [];
+
+          for (const rect of rects) {
+            if (rect.id === edge.source || rect.id === edge.target) continue;
+            yLanes.push(rect.y - 16, rect.y + rect.h + 16);
+            xLanes.push(rect.x - 16, rect.x + rect.w + 16);
+          }
+
+          for (const y of Array.from(new Set(yLanes.map((lane) => Math.round(lane))))) {
+            candidates.push(simplifyPoints([start, { x: start.x, y }, { x: end.x, y }, end]));
+          }
+          for (const x of Array.from(new Set(xLanes.map((lane) => Math.round(lane))))) {
+            candidates.push(simplifyPoints([start, { x, y: start.y }, { x, y: end.y }, end]));
+          }
+          candidates.push(simplifyPoints([start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]));
+          candidates.push(simplifyPoints([start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]));
+
+          for (const y of Array.from(new Set(baseYLanes.map((lane) => Math.round(lane))))) {
+            for (const x of Array.from(new Set(baseXLanes.map((lane) => Math.round(lane))))) {
+              candidates.push(simplifyPoints([
+                start,
+                { x, y: start.y },
+                { x, y },
+                { x: end.x, y },
+                end,
+              ]));
+              candidates.push(simplifyPoints([
+                start,
+                { x: start.x, y },
+                { x, y },
+                { x, y: end.y },
+                end,
+              ]));
+            }
+          }
+
+          return candidates.filter((candidate) => candidate.length >= 2 && edgeNodeHits(edge, candidate) === 0);
+        }
+
+        for (let iteration = 0; iteration < 8; iteration++) {
+          const { counts } = crossingState();
+          const crossingEdges = Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([edgeId]) => connections.find((edge) => edge.id === edgeId))
+            .filter(Boolean);
+
+          let bestEdge = null;
+          let bestWaypoints = null;
+          let bestCost = totalCost();
+          for (const edge of crossingEdges) {
+            const original = edge.waypoints;
+            for (const candidate of candidatePaths(edge)) {
+              edge.waypoints = candidate;
+              const candidateCost = totalCost();
+              if (candidateCost < bestCost) {
+                bestCost = candidateCost;
+                bestEdge = edge;
+                bestWaypoints = candidate;
+              }
+            }
+            edge.waypoints = original;
+          }
+
+          if (!bestEdge || !bestWaypoints) break;
+          bestEdge.waypoints = bestWaypoints;
+        }
+      }
+
       // Post-process: align nodes in the same container & rank horizontally
       // RE-ENABLED: ELK spacing을 고려하도록 개선된 alignRanks 사용
       if (typeof NS.alignRanks === 'function') {
@@ -947,6 +1313,8 @@
           console.log('[applyElkLayout] alignRanks failed', e); 
         }
       }
+
+      optimizeEdgeDetours();
     } catch (err) {
       console.log('[applyElkLayout] error - falling back to grid', err);
       fallbackGrid(diagramData);
